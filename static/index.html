@@ -1,0 +1,138 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+	<meta charset="UTF-8">
+	<meta name="viewport" content="width=device-width, initial-scale=1.0">
+	<title>Chat with Local LLaMA</title>
+	<style>
+		.chat-container { max-width: 800px; margin: 0 auto; padding: 20px; }
+		#messages { list-style: none; padding: 0; }
+		#messages li { padding: 10px; margin: 5px 0; background: #f5f5f5; border-radius: 5px; }
+		.input-group { display: flex; gap: 10px; margin-top: 20px; }
+		input[type="text"] { flex: 1; padding: 10px; border: 1px solid #ddd; border-radius: 5px; }
+		button { padding: 10px 20px; background: #007bff; color: white; border: none; border-radius: 5px; cursor: pointer; }
+		button:hover { background: #0056b3; }
+		.upload-section { margin-top: 30px; }
+		.upload-container { border: 2px dashed #ddd; padding: 20px; text-align: center; margin-bottom: 10px; }
+		.upload-container.dragover { border-color: #007bff; background: #f0f0f0; }
+		#uploadProgress { width: 100%; height: 20px; background: #eee; border-radius: 10px; margin-top: 10px; }
+		#uploadProgressBar { height: 100%; background: #007bff; width: 0; transition: width 0.3s ease; }
+		#uploadStatus { margin-top: 10px; font-weight: bold; }
+	</style>
+</head>
+<body>
+<div class="chat-container">
+	<h1>Chat with Local LLaMA</h1>
+	<div id="chat">
+		<ul id="messages"></ul>
+	</div>
+	<div class="input-group">
+		<input id="messageInput" type="text" placeholder="Type a message... " />
+		<button onclick="sendMessage()">Send</button>
+	</div>
+	<div class="upload-section">
+		<div class="upload-container" id="dropZone">
+			<input type="file" id="fileInput" accept=".txt" style="display: none;" />
+			<p>Drag and drop a file here or click to select</p>
+		</div>
+		<div id="uploadProgress">
+			<div id="uploadProgressBar"></div>
+		</div>
+		<div id="uploadStatus"></div>
+	</div>
+</div>
+
+<script>
+	const ws = new WebSocket('ws://localhost:8000/ws');
+	const dropZone = document.getElementById('dropZone');
+	const fileInput = document.getElementById('fileInput');
+	const uploadProgress = document.getElementById('uploadProgress');
+	const uploadProgressBar = document.getElementById('uploadProgressBar');
+	const uploadStatus = document.getElementById('uploadStatus');
+
+	// Drag and drop handlers
+	dropZone.addEventListener('dragover', (e) => {
+		e.preventDefault();
+		dropZone.classList.add('dragover');
+	});
+
+	dropZone.addEventListener('dragleave', () => {
+		dropZone.classList.remove('dragover');
+	});
+
+	dropZone.addEventListener('drop', (e) => {
+		e.preventDefault();
+		dropZone.classList.remove('dragover');
+		const files = e.dataTransfer.files;
+		if (files.length > 0) {
+			handleFile(files[0]);
+		}
+	});
+
+	// Click to upload
+	dropZone.addEventListener('click', () => {
+		fileInput.click();
+	});
+
+	fileInput.addEventListener('change', (e) => {
+		if (e.target.files.length > 0) {
+			handleFile(e.target.files[0]);
+		}
+	});
+
+	// Ctrl+Enter to send message
+	document.getElementById('messageInput').addEventListener('keydown', (e) => {
+		if (e.ctrlKey && e.key === 'Enter') {
+			e.preventDefault();
+			sendMessage();
+		}
+	});
+
+	async function handleFile(file) {
+		uploadStatus.textContent = 'Preparing to upload...';
+		const formData = new FormData();
+		formData.append('file', file);
+
+		try {
+			uploadProgress.style.display = 'block';
+			uploadProgressBar.style.width = '0%';
+
+			const response = await fetch('/upload', {
+				method: 'POST',
+				body: formData,
+				onuploadprogress: (e) => {
+					const percent = (e.loaded * 100) / e.total;
+					uploadProgressBar.style.width = `${percent}%`;
+				}
+			});
+
+			if (response.ok) {
+				uploadStatus.textContent = 'File uploaded successfully!';
+				uploadProgress.style.display = 'none';
+			} else {
+				uploadStatus.textContent = 'Error uploading file';
+			}
+		} catch (error) {
+			uploadStatus.textContent = 'Connection error';
+		}
+	}
+
+	ws.onmessage = function(event) {
+		const messages = document.getElementById('messages');
+		const message = document.createElement('li');
+		message.textContent = event.data;
+		messages.appendChild(message);
+		window.scrollTo(0, document.body.scrollHeight);
+	};
+
+	function sendMessage() {
+		const input = document.getElementById('messageInput');
+		const message = input.value;
+		if(message.trim()) {
+			ws.send(message);
+			input.value = '';
+		}
+	}
+</script>
+</body>
+</html>
